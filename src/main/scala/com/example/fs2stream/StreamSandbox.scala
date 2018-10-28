@@ -40,7 +40,7 @@ object ChecksumUtils {
 
   def sha1[F[_] : Sync](stream: Stream[F, String]): F[Stream[F, String]] = {
     val s = stream.through(text.utf8Encode).through(hash.sha1).map("%02X" format _).fold("")(_ + _)
-    implicitly[Sync[F]].point(s)
+    Sync[F].point(s)
   }
 
 }
