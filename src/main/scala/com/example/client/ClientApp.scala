@@ -11,7 +11,6 @@ import fs2.{Pipe, Stream, hash}
 import org.http4s.{Header, Headers, Request}
 import org.http4s.client.Client
 import org.http4s.client.blaze.BlazeClientBuilder
-import org.http4s.client.dsl.Http4sClientDsl
 import org.http4s.Method.PUT
 import org.http4s.Uri.uri
 
@@ -24,11 +23,14 @@ object Hashing {
   }
 }
 
-object FileSystem {
-  def read[F[_] : Sync : ContextShift](path: file.Path): Stream[F, Byte] = {
-    val blockingExecutionContext = ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(2))
-    fs2.io.file.readAll[F](path, blockingExecutionContext, 4096)
+class FileSystem[F[_] : Sync : ContextShift](ec: ExecutionContext) {
+  def read(path: file.Path): Stream[F, Byte] = {
+    fs2.io.file.readAll[F](path, ec, 4096)
   }
+}
+
+object FileSystem {
+  def apply[F[_]](implicit F: FileSystem[F]): FileSystem[F] = F
 }
 
 class Console[F[_] : Sync] {
@@ -43,8 +45,8 @@ object Console {
 
 object HttpClient {
 
-  def upload[F[_] : Sync : ContextShift](path: file.Path)(client: Client[F]): F[String] = {
-    val fileStream = FileSystem.read(path)
+  def upload[F[_] : Sync : ContextShift : FileSystem](path: file.Path)(client: Client[F]): F[String] = {
+    val fileStream = FileSystem[F].read(path)
     for {
       sha <- Hashing.sha1(fileStream).compile.toVector
       shaString = sha.head
@@ -55,9 +57,9 @@ object HttpClient {
 
 }
 
-class UploadAndPrintResult[F[_] : Monad : ContextShift : ConcurrentEffect : Console] {
+class UploadAndPrintResult[F[_] : Monad : ContextShift : ConcurrentEffect : Console : FileSystem](ec: ExecutionContext) {
   def run(path: file.Path): F[Unit] = for {
-    out <- BlazeClientBuilder[F](global).resource.use(HttpClient.upload[F](path))
+    out <- BlazeClientBuilder[F](ec).resource.use(HttpClient.upload[F](path))
     p <- Console[F].print(out)
   } yield ()
 }
@@ -66,8 +68,10 @@ object ClientApp extends IOApp {
 
   def run(args: List[String]): IO[ExitCode] = {
     val path: file.Path = Paths.get("src/main/resources/logback.xml")
+    val blockingExecutionContext = ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(2))
     implicit val c: Console[IO] = new Console[IO]
-    new UploadAndPrintResult[IO].run(path) as ExitCode.Success
+    implicit val fs: FileSystem[IO] = new FileSystem[IO](blockingExecutionContext)
+    new UploadAndPrintResult[IO](global).run(path) as ExitCode.Success
   }
 
 }
