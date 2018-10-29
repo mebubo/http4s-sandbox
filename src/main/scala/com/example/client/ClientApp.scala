@@ -4,10 +4,10 @@ import java.nio.file
 import java.nio.file.Paths
 import java.util.concurrent.Executors
 
-import cats.data.ReaderT
+import cats.Applicative
 import cats.effect._
 import cats.implicits._
-import cats.mtl.ApplicativeAsk
+import cats.mtl.{ApplicativeAsk, DefaultApplicativeAsk}
 import fs2.{Pipe, Stream, hash}
 import org.http4s.{Header, Headers, Request, Uri}
 import org.http4s.client.Client
@@ -46,7 +46,7 @@ object Console {
 
 object HttpClient {
 
-  def upload[F[_] : Sync : ContextShift : FileSystem : AppConfig.ConfigAsk](path: file.Path)(client: Client[F]): F[String] = {
+  def upload[F[_] : Sync : ContextShift : FileSystem : Config.ConfigAsk](path: file.Path)(client: Client[F]): F[String] = {
     val fileStream = FileSystem[F].read(path)
     for {
       sha <- Hashing.sha1(fileStream).compile.toVector
@@ -59,7 +59,7 @@ object HttpClient {
 
 }
 
-class UploadAndPrintResult[F[_] : Sync : ContextShift : ConcurrentEffect : Console : FileSystem : AppConfig.ConfigAsk](ec: ExecutionContext) {
+class UploadAndPrintResult[F[_] : Sync : ContextShift : ConcurrentEffect : Console : FileSystem : Config.ConfigAsk](ec: ExecutionContext) {
   def run(path: file.Path): F[Unit] = for {
     out <- BlazeClientBuilder[F](ec).resource.use(HttpClient.upload[F](path))
     p <- Console[F].print(out)
@@ -68,31 +68,23 @@ class UploadAndPrintResult[F[_] : Sync : ContextShift : ConcurrentEffect : Conso
 
 case class AppConfig(endpoint: Uri)
 
-object AppConfig {
-  type ConfigAsk[F[_]] = ApplicativeAsk[F, AppConfig]
-  object ConfigAsk {
-    def apply[F[_]](implicit F: ApplicativeAsk[F, AppConfig]): ConfigAsk[F] = F
-  }
-}
-
 object Config {
-  def endpoint[F[_] : AppConfig.ConfigAsk]: F[Uri] = AppConfig.ConfigAsk[F].reader(_.endpoint)
+  type ConfigAsk[F[_]] = ApplicativeAsk[F, AppConfig]
+  def apply[F[_]](implicit F: ConfigAsk[F]): ConfigAsk[F] = F
+  def endpoint[F[_] : Config.ConfigAsk]: F[Uri] = Config[F].reader(_.endpoint)
 }
 
 object ClientApp extends IOApp {
 
-  import cats.mtl.implicits._
-
   def run(args: List[String]): IO[ExitCode] = {
     val path: file.Path = Paths.get("src/main/resources/logback.xml")
     implicit val blockingExecutionContext: ExecutionContext = ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(2))
-    type App[A] = ReaderT[IO, AppConfig, A]
+    type App[A] = IO[A]
     implicit val c: Console[App] = new Console[App]
     implicit val fs: FileSystem[App] = new FileSystem[App](blockingExecutionContext)
-    implicit val config: AppConfig = AppConfig(uri("https://httpbin.org/anything"))
-    val value = new UploadAndPrintResult[App](global)
-    val value1 = value.run(path)
-    value1.run(config) as ExitCode.Success
+    val config: AppConfig = AppConfig(uri("https://httpbin.org/anything"))
+    implicit val configAsk: ApplicativeAsk[App, AppConfig] = ApplicativeAsk.constant[App, AppConfig](config)
+    new UploadAndPrintResult[App](global).run(path) as ExitCode.Success
   }
 
 }
