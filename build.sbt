@@ -7,7 +7,8 @@ libraryDependencies ++= Seq(
   "org.http4s" %% "http4s-dsl" % Http4sVersion,
   "ch.qos.logback" % "logback-classic" % LogbackVersion,
   "co.fs2" %% "fs2-core" % "1.0.0",
-  "co.fs2" %% "fs2-io" % "1.0.0"
+  "co.fs2" %% "fs2-io" % "1.0.0",
+  "org.typelevel" %% "cats-mtl-core" % "0.4.0"
 )
 
 scalacOptions ++= Seq(
