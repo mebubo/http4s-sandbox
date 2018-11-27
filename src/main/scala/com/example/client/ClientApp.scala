@@ -78,7 +78,7 @@ object ClientApp extends IOApp {
 
   def run(args: List[String]): IO[ExitCode] = {
     val path: file.Path = Paths.get("src/main/resources/logback.xml")
-    implicit val blockingExecutionContext: ExecutionContext = ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(2))
+    val blockingExecutionContext: ExecutionContext = ExecutionContext.fromExecutorService(Executors.newCachedThreadPool)
     type App[A] = IO[A]
     implicit val c: Console[App] = new Console[App]
     implicit val fs: FileSystem[App] = new FileSystem[App](blockingExecutionContext)

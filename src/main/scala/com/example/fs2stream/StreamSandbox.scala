@@ -1,13 +1,31 @@
 package com.example.fs2stream
 
-import cats.effect.{IO, Sync}
+import java.nio.file.Paths
+import java.util.concurrent.Executors
+
+import cats.effect.{ContextShift, IO, Sync}
 
 import scala.{Stream => _}
-import fs2.{Stream, hash, text, io}
+import fs2.{Stream, compress, hash, io, text}
+import fs2.io.file
+
+import scala.concurrent.ExecutionContext
 
 object StreamSandbox {
 
+  def x[F[_] : Sync : ContextShift](ec: ExecutionContext) = {
+    val s1 = file.readAll[F](Paths.get("build.sbt"), ec, 4096)
+    val s2 = s1.through(compress.deflate[F]())
+    s2.to(file.writeAll[F](Paths.get("build.sbt.gz"), ec))
+  }
+
   def main(args: Array[String]): Unit = {
+    val ec: ExecutionContext = ExecutionContext.fromExecutorService(Executors.newCachedThreadPool)
+    implicit val cs = cats.effect.IO.contextShift(ec)
+    val unit = x[IO](ec).compile.drain.unsafeRunSync
+  }
+
+  def foo(args: Array[String]): Unit = {
     val s = Stream("a")
 
     val sha = s.through(text.utf8Encode).through(hash.sha1)

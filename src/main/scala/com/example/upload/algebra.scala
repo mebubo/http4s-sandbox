@@ -1,5 +1,9 @@
 package com.example.upload
 
+import cats.effect.Resource
+import org.http4s.client.Client
+import org.http4s.{Headers, Status, Uri}
+
 object algebra {
 
   trait DataSource[F[_]] {
@@ -13,9 +17,13 @@ object algebra {
   }
 
   trait Http[F[_]] {
-    def upload(hs: data.Headers,
-               e: data.Endpoint,
-               s: fs2.Stream[F, Byte]): F[Unit]
+    def upload(hs: Headers,
+               e: Uri,
+               s: fs2.Stream[F, Byte])(c: Client[F]): F[Status]
+  }
+
+  trait HttpClient[F[_]] {
+    def client: Resource[F, Client[F]]
   }
 
   trait Hashing[F[_]] {
